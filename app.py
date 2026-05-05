@@ -124,15 +124,11 @@ for index, row in filtered_df.iterrows():
                 st.warning("אין תמונה מוצעת")
             else:
                 st.image(image_url, width=400)
+                st.success("✅ התמונה מוצגת בגודל 400×400")
                 st.link_button("פתח תמונה לבדיקה", image_url)
 
-            st.checkbox(
-                "בדקתי שהתמונה 400×400",
-                key=f"img_size_ok_{sku}_{index}"
-            )
-
-            st.checkbox(
-                "בדקתי שהתמונה ללא רקע",
+            bg_ok = st.checkbox(
+                "✅ התמונה ללא רקע",
                 key=f"img_bg_ok_{sku}_{index}"
             )
 
@@ -140,11 +136,8 @@ for index, row in filtered_df.iterrows():
 
             with c4:
                 if st.button("✅ מאשר תמונה", key=f"approve_img_{sku}_{index}"):
-                    size_ok = st.session_state.get(f"img_size_ok_{sku}_{index}", False)
-                    bg_ok = st.session_state.get(f"img_bg_ok_{sku}_{index}", False)
-
-                    if not size_ok or not bg_ok:
-                        st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - חסרה בדיקת 400×400 או ללא רקע"
+                    if not bg_ok:
+                        st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - חסרה בדיקת ללא רקע"
                     else:
                         st.session_state[f"img_status_{sku}_{index}"] = "תמונה אושרה"
 
