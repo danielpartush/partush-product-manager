@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Partush Product Manager", layout="wide")
 
 st.title("Partush Product Manager")
-st.caption("מצב בדיקות דמה - ללא חיבור ל-WooCommerce וללא שינוי באתר")
+st.caption("מצב בדיקות דמה - ללא חיבור WooCommerce וללא שינוי באתר")
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -22,68 +22,77 @@ credentials = Credentials.from_service_account_info(
 )
 
 client = gspread.authorize(credentials)
-sheet_url = st.secrets["google_sheet_url"]
-sheet = client.open_by_url(sheet_url)
+sheet = client.open_by_url(st.secrets["google_sheet_url"])
 worksheet = sheet.sheet1
 
 data = worksheet.get_all_records()
 df = pd.DataFrame(data)
 
-st.success("Google Sheets מחובר ועובד")
-
-st.subheader("נתונים מה-Google Sheet")
-st.dataframe(df, use_container_width=True)
-
-st.subheader("בדיקות דמה לפני חיבור WooCommerce")
+st.success("Google Sheets מחובר כמקור נתונים פנימי")
 
 required_columns = ["מק״ט", "שם מוצר", "תיאור מוצע", "תמונה מוצעת"]
-
 missing_columns = [col for col in required_columns if col not in df.columns]
 
 if missing_columns:
-    st.error("חסרות עמודות בגוגל שיט:")
+    st.error("חסרות עמודות חובה בגוגל שיט:")
     st.write(missing_columns)
-else:
-    st.success("מבנה הטבלה תקין לבדיקה")
+    st.stop()
 
-    total_products = len(df)
-    missing_description = df[df["תיאור מוצע"].astype(str).str.strip() == ""]
-    missing_image = df[df["תמונה מוצעת"].astype(str).str.strip() == ""]
+def is_empty(value):
+    return str(value).strip() == "" or str(value).strip().lower() == "nan"
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("סה״כ מוצרים", total_products)
-    col2.metric("חסר תיאור", len(missing_description))
-    col3.metric("חסרה תמונה", len(missing_image))
+def product_status(row):
+    problems = []
 
-    st.subheader("סימולציית פעולות שהמערכת הייתה עושה")
+    if is_empty(row.get("תיאור מוצע", "")):
+        problems.append("חסר תיאור")
 
-    actions = []
+    if is_empty(row.get("תמונה מוצעת", "")):
+        problems.append("חסרה תמונה")
 
-    for _, row in df.iterrows():
-        sku = row.get("מק״ט", "")
-        name = row.get("שם מוצר", "")
-        desc = str(row.get("תיאור מוצע", "")).strip()
-        image = str(row.get("תמונה מוצעת", "")).strip()
+    if not problems:
+        return "מוכן לבדיקה", "✅"
 
-        if desc:
-            actions.append({
-                "מק״ט": sku,
-                "שם מוצר": name,
-                "פעולה": "היה מעדכן תיאור מוצר",
-                "סטטוס": "דמה בלבד - לא נשלח לאתר"
-            })
+    return " / ".join(problems), "⚠️"
 
-        if image:
-            actions.append({
-                "מק״ט": sku,
-                "שם מוצר": name,
-                "פעולה": "היה מעדכן תמונת מוצר",
-                "סטטוס": "דמה בלבד - לא נשלח לאתר"
-            })
+st.subheader("מוצרים לשדרוג")
 
-    actions_df = pd.DataFrame(actions)
+search = st.text_input("חיפוש לפי שם מוצר או מק״ט")
 
-    if len(actions_df) > 0:
-        st.dataframe(actions_df, use_container_width=True)
-    else:
-        st.info("אין פעולות דמה לביצוע כרגע")
+filtered_df = df.copy()
+
+if search:
+    filtered_df = filtered_df[
+        filtered_df["שם מוצר"].astype(str).str.contains(search, case=False, na=False) |
+        filtered_df["מק״ט"].astype(str).str.contains(search, case=False, na=False)
+    ]
+
+for _, row in filtered_df.iterrows():
+    status_text, icon = product_status(row)
+
+    with st.container(border=True):
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.markdown(f"### {icon} {row.get('שם מוצר', '')}")
+            st.write(f"**מק״ט:** {row.get('מק״ט', '')}")
+            st.write(f"**סטטוס:** {status_text}")
+
+            desc = row.get("תיאור מוצע", "")
+
+            if not is_empty(desc):
+                st.markdown("**תיאור מוצע:**")
+                st.write(desc)
+            else:
+                st.warning("אין תיאור מוצע למוצר הזה")
+
+        with col2:
+            image_url = row.get("תמונה מוצעת", "")
+
+            if not is_empty(image_url):
+                st.markdown("**תמונה מוצעת:**")
+                st.image(image_url, use_container_width=True)
+            else:
+                st.warning("אין תמונה מוצעת")
+
+        st.info("מצב דמה בלבד — לא נשלח שום שינוי לאתר")
