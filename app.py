@@ -10,7 +10,7 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Partush Product Manager", layout="wide")
 
 st.title("Partush Product Manager")
-st.caption("מצב בדיקות דמה - ללא שינוי באתר")
+st.caption("סימולציית WooCommerce מלאה - מצב דמה בלבד, ללא שינוי באתר")
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -18,11 +18,7 @@ SCOPES = [
 ]
 
 service_account_info = json.loads(st.secrets["gcp_service_account_json"])
-
-credentials = Credentials.from_service_account_info(
-    service_account_info,
-    scopes=SCOPES
-)
+credentials = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 
 client = gspread.authorize(credentials)
 sheet = client.open_by_url(st.secrets["google_sheet_url"])
@@ -31,9 +27,16 @@ worksheet = sheet.sheet1
 data = worksheet.get_all_records()
 df = pd.DataFrame(data)
 
-st.success("Google Sheets מחובר כמקור נתונים פנימי")
+required_columns = [
+    "מק״ט",
+    "שם מוצר",
+    "סטטוס מוצר",
+    "תיאור קיים באתר",
+    "תמונה קיימת באתר",
+    "תיאור מוצע",
+    "תמונה מוצעת"
+]
 
-required_columns = ["מק״ט", "שם מוצר", "תיאור מוצע", "תמונה מוצעת"]
 missing_columns = [col for col in required_columns if col not in df.columns]
 
 if missing_columns:
@@ -52,7 +55,6 @@ def check_image_requirements(image_url):
 
         image = Image.open(BytesIO(response.content)).convert("RGBA")
         width, height = image.size
-
         is_400x400 = width == 400 and height == 400
 
         alpha = image.getchannel("A")
@@ -64,7 +66,7 @@ def check_image_requirements(image_url):
             "height": height,
             "is_400x400": is_400x400,
             "has_transparency": has_transparency,
-            "can_approve": is_400x400 and has_transparency,
+            "can_use": is_400x400 and has_transparency,
             "error": ""
         }
 
@@ -75,25 +77,27 @@ def check_image_requirements(image_url):
             "height": 0,
             "is_400x400": False,
             "has_transparency": False,
-            "can_approve": False,
+            "can_use": False,
             "error": str(e)
         }
 
-def status_for(row):
+def image_status_text(check):
+    if check is None:
+        return "אין תמונה"
+    if not check["ok"]:
+        return "קישור תמונה לא תקין"
+    if check["can_use"]:
+        return "תמונה תקינה"
     problems = []
+    if not check["is_400x400"]:
+        problems.append("לא 400×400")
+    if not check["has_transparency"]:
+        problems.append("עם רקע")
+    return " / ".join(problems)
 
-    if is_empty(row.get("תיאור מוצע", "")):
-        problems.append("חסר תיאור")
+st.success("Google Sheets מחובר כמקור נתונים פנימי")
 
-    if is_empty(row.get("תמונה מוצעת", "")):
-        problems.append("חסרה תמונה")
-
-    if not problems:
-        return "מוכן לבדיקה", "✅"
-
-    return " / ".join(problems), "⚠️"
-
-st.subheader("מוצרים לשדרוג")
+st.subheader("סימולציית אתר מול הצעות מערכת")
 
 search = st.text_input("חיפוש לפי שם מוצר או מק״ט")
 
@@ -108,31 +112,79 @@ if search:
 for index, row in filtered_df.iterrows():
     sku = str(row.get("מק״ט", "")).strip()
     name = str(row.get("שם מוצר", "")).strip()
-    desc = str(row.get("תיאור מוצע", "")).strip()
-    image_url = str(row.get("תמונה מוצעת", "")).strip()
+    product_status = str(row.get("סטטוס מוצר", "")).strip()
 
-    status_text, icon = status_for(row)
+    site_desc = str(row.get("תיאור קיים באתר", "")).strip()
+    site_image = str(row.get("תמונה קיימת באתר", "")).strip()
 
-    edit_key = f"edit_desc_mode_{sku}_{index}"
+    suggested_desc = str(row.get("תיאור מוצע", "")).strip()
+    suggested_image = str(row.get("תמונה מוצעת", "")).strip()
 
-    if edit_key not in st.session_state:
-        st.session_state[edit_key] = False
+    site_img_check = None if is_empty(site_image) else check_image_requirements(site_image)
+    suggested_img_check = None if is_empty(suggested_image) else check_image_requirements(suggested_image)
+
+    is_new_product = product_status == "מוצר חדש"
+    is_existing_product = product_status == "קיים באתר"
+
+    needs_desc_update = not is_empty(suggested_desc) and suggested_desc != site_desc
+    site_image_bad = site_img_check is None or not site_img_check["can_use"]
+    suggested_image_good = suggested_img_check is not None and suggested_img_check["can_use"]
+
+    if is_new_product:
+        title_icon = "🆕"
+        main_status = "מוצר חדש - נדרש תיאור ותמונה תקינה"
+    elif is_existing_product:
+        title_icon = "✅"
+        main_status = "מוצר קיים באתר - שדרוג מבוקר"
+    else:
+        title_icon = "⚠️"
+        main_status = "סטטוס מוצר לא מוגדר"
 
     with st.container(border=True):
-        st.markdown(f"## {icon} {name}")
+        st.markdown(f"## {title_icon} {name}")
         st.write(f"**מק״ט:** {sku}")
-        st.write(f"**סטטוס:** {status_text}")
+        st.write(f"**סטטוס מוצר:** {product_status}")
+        st.info(main_status)
 
-        col_text, col_image = st.columns([2, 1])
+        col_site, col_suggested = st.columns(2)
 
-        with col_text:
-            st.markdown("### תיאור מוצע")
+        with col_site:
+            st.markdown("### מצב קיים באתר")
 
-            if is_empty(desc):
-                st.warning("אין תיאור מוצע")
-                desc = ""
+            st.markdown("**תיאור קיים באתר:**")
+            if is_empty(site_desc):
+                st.warning("אין תיאור קיים באתר")
             else:
-                st.write(desc)
+                st.write(site_desc)
+
+            st.markdown("**תמונה קיימת באתר:**")
+            if is_empty(site_image):
+                st.warning("אין תמונה קיימת באתר")
+            else:
+                st.image(site_image, width=260)
+                st.link_button("פתח תמונה קיימת", site_image)
+
+                if site_img_check and site_img_check["ok"]:
+                    st.write(f"מידות: {site_img_check['width']}×{site_img_check['height']}")
+                    if site_img_check["can_use"]:
+                        st.success("✅ תמונת האתר תקינה")
+                    else:
+                        st.error(f"❌ תמונת האתר דורשת החלפה: {image_status_text(site_img_check)}")
+                else:
+                    st.error("❌ תמונת האתר שבורה / לא ניתנת לבדיקה")
+
+        with col_suggested:
+            st.markdown("### הצעת מערכת")
+
+            st.markdown("**תיאור מוצע:**")
+            if is_empty(suggested_desc):
+                st.warning("אין תיאור מוצע")
+            else:
+                st.write(suggested_desc)
+
+            edit_key = f"edit_desc_mode_{sku}_{index}"
+            if edit_key not in st.session_state:
+                st.session_state[edit_key] = False
 
             c1, c2, c3 = st.columns(3)
 
@@ -151,7 +203,7 @@ for index, row in filtered_df.iterrows():
             if st.session_state[edit_key]:
                 manual_desc = st.text_area(
                     "עריכת תיאור ידנית",
-                    value=desc,
+                    value=suggested_desc,
                     key=f"manual_desc_{sku}_{index}",
                     height=180
                 )
@@ -162,7 +214,6 @@ for index, row in filtered_df.iterrows():
                     if st.button("💾 שמור תיאור", key=f"save_manual_desc_{sku}_{index}"):
                         row_number = index + 2
                         desc_col_number = df.columns.get_loc("תיאור מוצע") + 1
-
                         worksheet.update_cell(row_number, desc_col_number, manual_desc)
 
                         st.session_state[f"desc_status_{sku}_{index}"] = "התיאור הידני נשמר בגוגל שיט"
@@ -175,49 +226,40 @@ for index, row in filtered_df.iterrows():
                         st.session_state[edit_key] = False
                         st.rerun()
 
-            desc_status = st.session_state.get(f"desc_status_{sku}_{index}", "ממתין לבדיקה")
-            st.info(f"סטטוס תיאור: {desc_status}")
+            st.info(f"סטטוס תיאור: {st.session_state.get(f'desc_status_{sku}_{index}', 'ממתין לבדיקה')}")
 
-        with col_image:
-            st.markdown("### תמונה מוצעת")
-            st.caption("חובה: 400×400 + ללא רקע")
-
-            image_check = None
-
-            if is_empty(image_url):
+            st.markdown("**תמונה מוצעת:**")
+            if is_empty(suggested_image):
                 st.warning("אין תמונה מוצעת")
             else:
-                image_check = check_image_requirements(image_url)
+                st.image(suggested_image, width=260)
+                st.link_button("פתח תמונה מוצעת", suggested_image)
 
-                st.image(image_url, width=400)
-                st.link_button("פתח תמונה לבדיקה", image_url)
+                if suggested_img_check and suggested_img_check["ok"]:
+                    st.write(f"מידות: {suggested_img_check['width']}×{suggested_img_check['height']}")
 
-                if not image_check["ok"]:
-                    st.error("❌ לא ניתן לבדוק את התמונה")
-                    st.write(image_check["error"])
+                    if suggested_img_check["is_400x400"]:
+                        st.success("✅ 400×400")
+                    else:
+                        st.error("❌ לא 400×400")
+
+                    if suggested_img_check["has_transparency"]:
+                        st.success("✅ ללא רקע")
+                    else:
+                        st.error("❌ יש רקע")
+
+                    if suggested_img_check["can_use"]:
+                        st.success("✅ התמונה המוצעת עומדת בתנאים")
+                    else:
+                        st.error("⛔ אי אפשר להשתמש בתמונה הזאת באתר")
                 else:
-                    st.write(f"מידות בפועל: {image_check['width']}×{image_check['height']}")
-
-                    if image_check["is_400x400"]:
-                        st.success("✅ התמונה בגודל 400×400")
-                    else:
-                        st.error("❌ התמונה לא בגודל 400×400")
-
-                    if image_check["has_transparency"]:
-                        st.success("✅ התמונה ללא רקע / רקע שקוף")
-                    else:
-                        st.error("❌ התמונה עם רקע — לא מאושר")
-
-                    if image_check["can_approve"]:
-                        st.success("✅ התמונה עומדת בתנאי העלאה")
-                    else:
-                        st.error("⛔ התמונה לא יכולה לעלות לאתר")
+                    st.error("❌ לא ניתן לבדוק את התמונה המוצעת")
 
             c4, c5 = st.columns(2)
 
             with c4:
                 if st.button("✅ מאשר תמונה", key=f"approve_img_{sku}_{index}"):
-                    if image_check and image_check["can_approve"]:
+                    if suggested_image_good:
                         st.session_state[f"img_status_{sku}_{index}"] = "תמונה אושרה"
                     else:
                         st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - התמונה לא עומדת בתנאים"
@@ -226,7 +268,51 @@ for index, row in filtered_df.iterrows():
                 if st.button("❌ לא מאשר תמונה", key=f"reject_img_{sku}_{index}"):
                     st.session_state[f"img_status_{sku}_{index}"] = "תמונה נדחתה"
 
-            img_status = st.session_state.get(f"img_status_{sku}_{index}", "ממתין לבדיקה")
-            st.info(f"סטטוס תמונה: {img_status}")
+            st.info(f"סטטוס תמונה: {st.session_state.get(f'img_status_{sku}_{index}', 'ממתין לבדיקה')}")
 
-        st.warning("מצב דמה בלבד — שום דבר לא נשלח לאתר")
+        st.markdown("### החלטת סימולציה")
+
+        desc_approved = st.session_state.get(f"desc_status_{sku}_{index}") in [
+            "תיאור אושר",
+            "התיאור הידני נשמר בגוגל שיט"
+        ]
+
+        img_approved = st.session_state.get(f"img_status_{sku}_{index}") == "תמונה אושרה"
+
+        if is_new_product:
+            if desc_approved and img_approved and suggested_image_good:
+                st.success("✅ סימולציה: המוצר החדש מוכן להקמה באתר")
+            else:
+                st.error("⛔ סימולציה: מוצר חדש לא מוכן. חובה לאשר תיאור ותמונה תקינה")
+
+        elif is_existing_product:
+            if site_image_bad:
+                st.warning("⚠️ תמונת האתר לא תקינה — מותר להציע החלפת תמונה")
+            else:
+                st.info("✅ תמונת האתר תקינה — לא נחליף תמונה בלי צורך")
+
+            actions = []
+
+            if desc_approved and needs_desc_update:
+                actions.append("עדכון תיאור באתר")
+
+            if site_image_bad and img_approved and suggested_image_good:
+                actions.append("החלפת תמונה באתר")
+
+            if not actions:
+                st.info("אין פעולות מוכנות לשליחה")
+            else:
+                st.success("פעולות שהיו נשלחות ל-WooCommerce:")
+                for action in actions:
+                    st.write(f"• {action}")
+
+        else:
+            st.error("יש למלא סטטוס מוצר: קיים באתר / מוצר חדש")
+
+        if st.button("🧪 מדמה שליחה ל-WooCommerce", key=f"simulate_send_{sku}_{index}"):
+            st.session_state[f"simulate_status_{sku}_{index}"] = "בוצעה סימולציה בלבד - לא נשלח כלום לאתר"
+
+        st.warning(st.session_state.get(
+            f"simulate_status_{sku}_{index}",
+            "מצב דמה בלבד — שום דבר לא נשלח לאתר"
+        ))
