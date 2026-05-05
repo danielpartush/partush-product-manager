@@ -147,7 +147,7 @@ for index, row in filtered_df.iterrows():
                     st.session_state[f"desc_status_{sku}_{index}"] = "תיאור נדחה"
 
             with c3:
-                if st.button("✏️ שינוי תיואר ידני", key=f"save_manual_desc_{sku}_{index}"):
+                if st.button("✏️ שינוי תיאור ידני", key=f"save_manual_desc_{sku}_{index}"):
                     st.session_state[f"manual_saved_{sku}_{index}"] = manual_desc
                     st.session_state[f"desc_status_{sku}_{index}"] = "נשמר שינוי ידני לתיאור"
 
