@@ -113,6 +113,11 @@ for index, row in filtered_df.iterrows():
 
     status_text, icon = status_for(row)
 
+    edit_key = f"edit_desc_mode_{sku}_{index}"
+
+    if edit_key not in st.session_state:
+        st.session_state[edit_key] = False
+
     with st.container(border=True):
         st.markdown(f"## {icon} {name}")
         st.write(f"**מק״ט:** {sku}")
@@ -129,13 +134,6 @@ for index, row in filtered_df.iterrows():
             else:
                 st.write(desc)
 
-            manual_desc = st.text_area(
-                "שינוי ידני לתיאור",
-                value=desc,
-                key=f"manual_desc_{sku}_{index}",
-                height=180
-            )
-
             c1, c2, c3 = st.columns(3)
 
             with c1:
@@ -147,15 +145,35 @@ for index, row in filtered_df.iterrows():
                     st.session_state[f"desc_status_{sku}_{index}"] = "תיאור נדחה"
 
             with c3:
-                if st.button("✏️ שינוי תיאור ידני", key=f"save_manual_desc_{sku}_{index}"):
-                    row_number = index + 2
-                    desc_col_number = df.columns.get_loc("תיאור מוצע") + 1
+                if st.button("✏️ שינוי תיאור ידני", key=f"open_manual_desc_{sku}_{index}"):
+                    st.session_state[edit_key] = True
 
-                    worksheet.update_cell(row_number, desc_col_number, manual_desc)
+            if st.session_state[edit_key]:
+                manual_desc = st.text_area(
+                    "עריכת תיאור ידנית",
+                    value=desc,
+                    key=f"manual_desc_{sku}_{index}",
+                    height=180
+                )
 
-                    st.session_state[f"desc_status_{sku}_{index}"] = "התיאור הידני נשמר בגוגל שיט"
-                    st.success("התיאור נשמר בהצלחה")
-                    st.rerun()
+                save_col, cancel_col = st.columns(2)
+
+                with save_col:
+                    if st.button("💾 שמור תיאור", key=f"save_manual_desc_{sku}_{index}"):
+                        row_number = index + 2
+                        desc_col_number = df.columns.get_loc("תיאור מוצע") + 1
+
+                        worksheet.update_cell(row_number, desc_col_number, manual_desc)
+
+                        st.session_state[f"desc_status_{sku}_{index}"] = "התיאור הידני נשמר בגוגל שיט"
+                        st.session_state[edit_key] = False
+                        st.success("התיאור נשמר בהצלחה")
+                        st.rerun()
+
+                with cancel_col:
+                    if st.button("בטל עריכה", key=f"cancel_manual_desc_{sku}_{index}"):
+                        st.session_state[edit_key] = False
+                        st.rerun()
 
             desc_status = st.session_state.get(f"desc_status_{sku}_{index}", "ממתין לבדיקה")
             st.info(f"סטטוס תיאור: {desc_status}")
