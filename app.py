@@ -70,12 +70,9 @@ def check_image_requirements(image_url):
         is_400x400 = width == 400 and height == 400
         is_square = width == height
 
-        supports_transparency = original_format.upper() in ["PNG", "WEBP"]
-
         rgba_image = image.convert("RGBA")
         alpha = rgba_image.getchannel("A")
         alpha_min, alpha_max = alpha.getextrema()
-
         has_transparency = alpha_min < 255
 
         problems = []
@@ -101,7 +98,6 @@ def check_image_requirements(image_url):
             "height": height,
             "is_400x400": is_400x400,
             "is_square": is_square,
-            "supports_transparency": supports_transparency,
             "has_transparency": has_transparency,
             "can_use": can_use,
             "problems": problems,
@@ -119,7 +115,6 @@ def check_image_requirements(image_url):
             "height": 0,
             "is_400x400": False,
             "is_square": False,
-            "supports_transparency": False,
             "has_transparency": False,
             "can_use": False,
             "problems": ["לא ניתן לפתוח או לבדוק את התמונה"],
@@ -164,15 +159,6 @@ def show_image_check(check):
         st.error("⛔ התמונה לא יכולה לעלות לאתר")
         for problem in check["problems"]:
             st.write(f"• {problem}")
-
-def image_status_text(check):
-    if check is None:
-        return "אין תמונה"
-    if not check["ok"]:
-        return "קישור תמונה לא תקין"
-    if check["can_use"]:
-        return "תמונה תקינה"
-    return " / ".join(check["problems"])
 
 st.success("Google Sheets מחובר כמקור נתונים פנימי")
 st.subheader("סימולציית אתר מול הצעות מערכת")
@@ -287,7 +273,6 @@ for index, row in filtered_df.iterrows():
                     if st.button("💾 שמור תיאור", key=f"save_manual_desc_{sku}_{index}"):
                         row_number = index + 2
                         desc_col_number = df.columns.get_loc("תיאור מוצע") + 1
-
                         worksheet.update_cell(row_number, desc_col_number, manual_desc)
 
                         st.session_state[f"desc_status_{sku}_{index}"] = "התיאור הידני נשמר בגוגל שיט"
@@ -305,35 +290,41 @@ for index, row in filtered_df.iterrows():
                 f"{st.session_state.get(f'desc_status_{sku}_{index}', 'ממתין לבדיקה')}"
             )
 
-            st.markdown("**תמונה מוצעת:**")
-            if is_empty(suggested_image):
-                st.warning("אין תמונה מוצעת")
-            else:
-                st.image(suggested_image, width=260)
-                st.link_button("פתח תמונה מוצעת", suggested_image)
+            show_suggested_image_section = is_new_product or site_image_bad
 
-                if suggested_img_check and suggested_img_check["ok"]:
-                    show_image_check(suggested_img_check)
+            if show_suggested_image_section:
+                st.markdown("**תמונה מוצעת:**")
+
+                if is_empty(suggested_image):
+                    st.warning("אין תמונה מוצעת")
                 else:
-                    st.error("❌ לא ניתן לבדוק את התמונה המוצעת")
+                    st.image(suggested_image, width=260)
+                    st.link_button("פתח תמונה מוצעת", suggested_image)
 
-            c4, c5 = st.columns(2)
-
-            with c4:
-                if st.button("✅ מאשר תמונה", key=f"approve_img_{sku}_{index}"):
-                    if suggested_image_good:
-                        st.session_state[f"img_status_{sku}_{index}"] = "תמונה אושרה"
+                    if suggested_img_check and suggested_img_check["ok"]:
+                        show_image_check(suggested_img_check)
                     else:
-                        st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - התמונה לא עומדת בתנאים"
+                        st.error("❌ לא ניתן לבדוק את התמונה המוצעת")
 
-            with c5:
-                if st.button("❌ לא מאשר תמונה", key=f"reject_img_{sku}_{index}"):
-                    st.session_state[f"img_status_{sku}_{index}"] = "תמונה נדחתה"
+                c4, c5 = st.columns(2)
 
-            st.info(
-                f"סטטוס תמונה: "
-                f"{st.session_state.get(f'img_status_{sku}_{index}', 'ממתין לבדיקה')}"
-            )
+                with c4:
+                    if st.button("✅ מאשר תמונה", key=f"approve_img_{sku}_{index}"):
+                        if suggested_image_good:
+                            st.session_state[f"img_status_{sku}_{index}"] = "תמונה אושרה"
+                        else:
+                            st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - התמונה לא עומדת בתנאים"
+
+                with c5:
+                    if st.button("❌ לא מאשר תמונה", key=f"reject_img_{sku}_{index}"):
+                        st.session_state[f"img_status_{sku}_{index}"] = "תמונה נדחתה"
+
+                st.info(
+                    f"סטטוס תמונה: "
+                    f"{st.session_state.get(f'img_status_{sku}_{index}', 'ממתין לבדיקה')}"
+                )
+            else:
+                st.info("✅ תמונת האתר הקיימת תקינה — אין צורך להציג תמונה מוצעת או להחליף תמונה")
 
         st.markdown("### החלטת סימולציה")
 
@@ -351,12 +342,12 @@ for index, row in filtered_df.iterrows():
                 st.error("⛔ סימולציה: מוצר חדש לא מוכן. חובה לאשר תיאור ותמונה תקינה")
 
         elif is_existing_product:
+            actions = []
+
             if site_image_bad:
                 st.warning("⚠️ תמונת האתר לא תקינה — מותר להציע החלפת תמונה")
             else:
-                st.info("✅ תמונת האתר תקינה — לא נחליף תמונה בלי צורך")
-
-            actions = []
+                st.info("✅ תמונת האתר תקינה — לא נחליף תמונה ולא נציג תמונה מוצעת")
 
             if desc_approved and needs_desc_update:
                 actions.append("עדכון תיאור באתר")
