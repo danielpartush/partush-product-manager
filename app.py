@@ -28,6 +28,9 @@ data = worksheet.get_all_records()
 df = pd.DataFrame(data)
 
 required_columns = [
+  df.columns = df.columns.str.strip()
+
+required_columns = [
     "מק״ט",
     "שם מוצר",
     "סטטוס מוצר",
@@ -35,6 +38,7 @@ required_columns = [
     "תמונה קיימת באתר",
     "תיאור מוצע",
     "תמונה מוצעת"
+]
 ]
 
 missing_columns = [col for col in required_columns if col not in df.columns]
