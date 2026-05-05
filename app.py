@@ -27,8 +27,8 @@ worksheet = sheet.sheet1
 data = worksheet.get_all_records()
 df = pd.DataFrame(data)
 
-required_columns = [
-  df.columns = df.columns.str.strip()
+# ניקוי שמות עמודות מרווחים נסתרים
+df.columns = df.columns.astype(str).str.strip()
 
 required_columns = [
     "מק״ט",
@@ -39,13 +39,14 @@ required_columns = [
     "תיאור מוצע",
     "תמונה מוצעת"
 ]
-]
 
 missing_columns = [col for col in required_columns if col not in df.columns]
 
 if missing_columns:
     st.error("חסרות עמודות חובה בגוגל שיט:")
     st.write(missing_columns)
+    st.write("עמודות שקיימות כרגע:")
+    st.write(list(df.columns))
     st.stop()
 
 def is_empty(value):
@@ -59,8 +60,8 @@ def check_image_requirements(image_url):
 
         image = Image.open(BytesIO(response.content)).convert("RGBA")
         width, height = image.size
-        is_400x400 = width == 400 and height == 400
 
+        is_400x400 = width == 400 and height == 400
         alpha = image.getchannel("A")
         has_transparency = alpha.getextrema()[0] < 255
 
@@ -92,6 +93,7 @@ def image_status_text(check):
         return "קישור תמונה לא תקין"
     if check["can_use"]:
         return "תמונה תקינה"
+
     problems = []
     if not check["is_400x400"]:
         problems.append("לא 400×400")
@@ -100,7 +102,6 @@ def image_status_text(check):
     return " / ".join(problems)
 
 st.success("Google Sheets מחובר כמקור נתונים פנימי")
-
 st.subheader("סימולציית אתר מול הצעות מערכת")
 
 search = st.text_input("חיפוש לפי שם מוצר או מק״ט")
@@ -170,6 +171,7 @@ for index, row in filtered_df.iterrows():
 
                 if site_img_check and site_img_check["ok"]:
                     st.write(f"מידות: {site_img_check['width']}×{site_img_check['height']}")
+
                     if site_img_check["can_use"]:
                         st.success("✅ תמונת האתר תקינה")
                     else:
@@ -218,6 +220,7 @@ for index, row in filtered_df.iterrows():
                     if st.button("💾 שמור תיאור", key=f"save_manual_desc_{sku}_{index}"):
                         row_number = index + 2
                         desc_col_number = df.columns.get_loc("תיאור מוצע") + 1
+
                         worksheet.update_cell(row_number, desc_col_number, manual_desc)
 
                         st.session_state[f"desc_status_{sku}_{index}"] = "התיאור הידני נשמר בגוגל שיט"
@@ -230,7 +233,10 @@ for index, row in filtered_df.iterrows():
                         st.session_state[edit_key] = False
                         st.rerun()
 
-            st.info(f"סטטוס תיאור: {st.session_state.get(f'desc_status_{sku}_{index}', 'ממתין לבדיקה')}")
+            st.info(
+                f"סטטוס תיאור: "
+                f"{st.session_state.get(f'desc_status_{sku}_{index}', 'ממתין לבדיקה')}"
+            )
 
             st.markdown("**תמונה מוצעת:**")
             if is_empty(suggested_image):
@@ -272,7 +278,10 @@ for index, row in filtered_df.iterrows():
                 if st.button("❌ לא מאשר תמונה", key=f"reject_img_{sku}_{index}"):
                     st.session_state[f"img_status_{sku}_{index}"] = "תמונה נדחתה"
 
-            st.info(f"סטטוס תמונה: {st.session_state.get(f'img_status_{sku}_{index}', 'ממתין לבדיקה')}")
+            st.info(
+                f"סטטוס תמונה: "
+                f"{st.session_state.get(f'img_status_{sku}_{index}', 'ממתין לבדיקה')}"
+            )
 
         st.markdown("### החלטת סימולציה")
 
@@ -314,9 +323,13 @@ for index, row in filtered_df.iterrows():
             st.error("יש למלא סטטוס מוצר: קיים באתר / מוצר חדש")
 
         if st.button("🧪 מדמה שליחה ל-WooCommerce", key=f"simulate_send_{sku}_{index}"):
-            st.session_state[f"simulate_status_{sku}_{index}"] = "בוצעה סימולציה בלבד - לא נשלח כלום לאתר"
+            st.session_state[f"simulate_status_{sku}_{index}"] = (
+                "בוצעה סימולציה בלבד - לא נשלח כלום לאתר"
+            )
 
-        st.warning(st.session_state.get(
-            f"simulate_status_{sku}_{index}",
-            "מצב דמה בלבד — שום דבר לא נשלח לאתר"
-        ))
+        st.warning(
+            st.session_state.get(
+                f"simulate_status_{sku}_{index}",
+                "מצב דמה בלבד — שום דבר לא נשלח לאתר"
+            )
+        )
