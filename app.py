@@ -2,6 +2,9 @@ import streamlit as st
 import gspread
 import json
 import pandas as pd
+import requests
+from io import BytesIO
+from PIL import Image
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Partush Product Manager", layout="wide")
@@ -40,6 +43,41 @@ if missing_columns:
 
 def is_empty(value):
     return str(value).strip() == "" or str(value).strip().lower() == "nan"
+
+@st.cache_data(show_spinner=False)
+def check_image_requirements(image_url):
+    try:
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
+
+        image = Image.open(BytesIO(response.content)).convert("RGBA")
+
+        width, height = image.size
+        is_400x400 = width == 400 and height == 400
+
+        alpha = image.getchannel("A")
+        has_transparency = alpha.getextrema()[0] < 255
+
+        return {
+            "ok": True,
+            "width": width,
+            "height": height,
+            "is_400x400": is_400x400,
+            "has_transparency": has_transparency,
+            "can_approve": is_400x400 and has_transparency,
+            "error": ""
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "width": 0,
+            "height": 0,
+            "is_400x400": False,
+            "has_transparency": False,
+            "can_approve": False,
+            "error": str(e)
+        }
 
 def status_for(row):
     problems = []
@@ -118,28 +156,47 @@ for index, row in filtered_df.iterrows():
 
         with col_image:
             st.markdown("### תמונה מוצעת")
-            st.caption("דרישה: 400×400, מוצר בלבד, ללא רקע")
+            st.caption("חובה: 400×400 + ללא רקע")
+
+            image_check = None
 
             if is_empty(image_url):
                 st.warning("אין תמונה מוצעת")
             else:
+                image_check = check_image_requirements(image_url)
+
                 st.image(image_url, width=400)
-                st.success("✅ התמונה מוצגת בגודל 400×400")
                 st.link_button("פתח תמונה לבדיקה", image_url)
 
-            bg_ok = st.checkbox(
-                "✅ התמונה ללא רקע",
-                key=f"img_bg_ok_{sku}_{index}"
-            )
+                if not image_check["ok"]:
+                    st.error("❌ לא ניתן לבדוק את התמונה")
+                    st.write(image_check["error"])
+                else:
+                    st.write(f"מידות בפועל: {image_check['width']}×{image_check['height']}")
+
+                    if image_check["is_400x400"]:
+                        st.success("✅ התמונה בגודל 400×400")
+                    else:
+                        st.error("❌ התמונה לא בגודל 400×400")
+
+                    if image_check["has_transparency"]:
+                        st.success("✅ התמונה ללא רקע / רקע שקוף")
+                    else:
+                        st.error("❌ התמונה עם רקע — לא מאושר")
+
+                    if image_check["can_approve"]:
+                        st.success("✅ התמונה עומדת בתנאי העלאה")
+                    else:
+                        st.error("⛔ התמונה לא יכולה לעלות לאתר")
 
             c4, c5 = st.columns(2)
 
             with c4:
                 if st.button("✅ מאשר תמונה", key=f"approve_img_{sku}_{index}"):
-                    if not bg_ok:
-                        st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - חסרה בדיקת ללא רקע"
-                    else:
+                    if image_check and image_check["can_approve"]:
                         st.session_state[f"img_status_{sku}_{index}"] = "תמונה אושרה"
+                    else:
+                        st.session_state[f"img_status_{sku}_{index}"] = "לא ניתן לאשר - התמונה לא עומדת בתנאים"
 
             with c5:
                 if st.button("❌ לא מאשר תמונה", key=f"reject_img_{sku}_{index}"):
