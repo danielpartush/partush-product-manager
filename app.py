@@ -51,8 +51,8 @@ def check_image_requirements(image_url):
         response.raise_for_status()
 
         image = Image.open(BytesIO(response.content)).convert("RGBA")
-
         width, height = image.size
+
         is_400x400 = width == 400 and height == 400
 
         alpha = image.getchannel("A")
@@ -133,7 +133,7 @@ for index, row in filtered_df.iterrows():
                 "שינוי ידני לתיאור",
                 value=desc,
                 key=f"manual_desc_{sku}_{index}",
-                height=160
+                height=180
             )
 
             c1, c2, c3 = st.columns(3)
@@ -148,8 +148,14 @@ for index, row in filtered_df.iterrows():
 
             with c3:
                 if st.button("✏️ שינוי תיאור ידני", key=f"save_manual_desc_{sku}_{index}"):
-                    st.session_state[f"manual_saved_{sku}_{index}"] = manual_desc
-                    st.session_state[f"desc_status_{sku}_{index}"] = "נשמר שינוי ידני לתיאור"
+                    row_number = index + 2
+                    desc_col_number = df.columns.get_loc("תיאור מוצע") + 1
+
+                    worksheet.update_cell(row_number, desc_col_number, manual_desc)
+
+                    st.session_state[f"desc_status_{sku}_{index}"] = "התיאור הידני נשמר בגוגל שיט"
+                    st.success("התיאור נשמר בהצלחה")
+                    st.rerun()
 
             desc_status = st.session_state.get(f"desc_status_{sku}_{index}", "ממתין לבדיקה")
             st.info(f"סטטוס תיאור: {desc_status}")
@@ -205,4 +211,4 @@ for index, row in filtered_df.iterrows():
             img_status = st.session_state.get(f"img_status_{sku}_{index}", "ממתין לבדיקה")
             st.info(f"סטטוס תמונה: {img_status}")
 
-        st.warning("מצב דמה בלבד — שום דבר עדיין לא נשלח לאתר או נשמר בגוגל שיט")
+        st.warning("מצב דמה בלבד — שום דבר לא נשלח לאתר")
