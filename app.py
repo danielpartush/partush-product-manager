@@ -26,8 +26,6 @@ worksheet = sheet.sheet1
 
 data = worksheet.get_all_records()
 df = pd.DataFrame(data)
-
-# ניקוי שמות עמודות מרווחים נסתרים
 df.columns = df.columns.astype(str).str.strip()
 
 required_columns = [
@@ -55,36 +53,117 @@ def is_empty(value):
 @st.cache_data(show_spinner=False)
 def check_image_requirements(image_url):
     try:
-        response = requests.get(image_url, timeout=10)
+        response = requests.get(
+            image_url,
+            timeout=12,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
         response.raise_for_status()
 
-        image = Image.open(BytesIO(response.content)).convert("RGBA")
+        content_type = response.headers.get("Content-Type", "")
+        image = Image.open(BytesIO(response.content))
+
+        original_format = image.format or "לא ידוע"
         width, height = image.size
+        mode = image.mode
 
         is_400x400 = width == 400 and height == 400
-        alpha = image.getchannel("A")
-        has_transparency = alpha.getextrema()[0] < 255
+        is_square = width == height
+
+        supports_transparency = original_format.upper() in ["PNG", "WEBP"]
+
+        rgba_image = image.convert("RGBA")
+        alpha = rgba_image.getchannel("A")
+        alpha_min, alpha_max = alpha.getextrema()
+
+        has_transparency = alpha_min < 255
+
+        problems = []
+
+        if not is_400x400:
+            problems.append(f"גודל לא תקין: {width}×{height}, נדרש 400×400")
+
+        if not has_transparency:
+            problems.append("אין שקיפות / יש רקע")
+
+        if original_format.upper() in ["JPEG", "JPG"]:
+            problems.append("JPG בדרך כלל לא מתאים לתמונה ללא רקע")
+
+        can_use = is_400x400 and has_transparency
 
         return {
             "ok": True,
+            "url": image_url,
+            "content_type": content_type,
+            "format": original_format,
+            "mode": mode,
             "width": width,
             "height": height,
             "is_400x400": is_400x400,
+            "is_square": is_square,
+            "supports_transparency": supports_transparency,
             "has_transparency": has_transparency,
-            "can_use": is_400x400 and has_transparency,
+            "can_use": can_use,
+            "problems": problems,
             "error": ""
         }
 
     except Exception as e:
         return {
             "ok": False,
+            "url": image_url,
+            "content_type": "",
+            "format": "",
+            "mode": "",
             "width": 0,
             "height": 0,
             "is_400x400": False,
+            "is_square": False,
+            "supports_transparency": False,
             "has_transparency": False,
             "can_use": False,
+            "problems": ["לא ניתן לפתוח או לבדוק את התמונה"],
             "error": str(e)
         }
+
+def show_image_check(check):
+    if not check or not check["ok"]:
+        st.error("❌ לא ניתן לבדוק את התמונה")
+        if check:
+            st.write(check["error"])
+        return
+
+    st.write(f"**פורמט:** {check['format']}")
+    st.write(f"**מידות בפועל:** {check['width']}×{check['height']}")
+
+    if check["is_400x400"]:
+        st.success("✅ גודל תקין: 400×400")
+    else:
+        st.error(f"❌ גודל לא תקין: {check['width']}×{check['height']}")
+
+    if check["is_square"]:
+        st.success("✅ התמונה מרובעת")
+    else:
+        st.warning("⚠️ התמונה לא מרובעת")
+
+    if check["has_transparency"]:
+        st.success("✅ התמונה ללא רקע / יש שקיפות")
+    else:
+        st.error("❌ אין שקיפות — כנראה יש רקע")
+
+    if check["format"].upper() in ["PNG", "WEBP"]:
+        st.success("✅ פורמט מתאים לשקיפות")
+    elif check["format"].upper() in ["JPEG", "JPG"]:
+        st.warning("⚠️ JPG לרוב לא מתאים לתמונה ללא רקע")
+    else:
+        st.info("ℹ️ פורמט לא סטנדרטי, צריך בדיקה")
+
+    if check["can_use"]:
+        st.success("✅ התמונה עומדת בתנאי העלאה לאתר")
+    else:
+        st.error("⛔ התמונה לא יכולה לעלות לאתר")
+        for problem in check["problems"]:
+            st.write(f"• {problem}")
 
 def image_status_text(check):
     if check is None:
@@ -93,19 +172,12 @@ def image_status_text(check):
         return "קישור תמונה לא תקין"
     if check["can_use"]:
         return "תמונה תקינה"
-
-    problems = []
-    if not check["is_400x400"]:
-        problems.append("לא 400×400")
-    if not check["has_transparency"]:
-        problems.append("עם רקע")
-    return " / ".join(problems)
+    return " / ".join(check["problems"])
 
 st.success("Google Sheets מחובר כמקור נתונים פנימי")
 st.subheader("סימולציית אתר מול הצעות מערכת")
 
 search = st.text_input("חיפוש לפי שם מוצר או מק״ט")
-
 filtered_df = df.copy()
 
 if search:
@@ -170,12 +242,7 @@ for index, row in filtered_df.iterrows():
                 st.link_button("פתח תמונה קיימת", site_image)
 
                 if site_img_check and site_img_check["ok"]:
-                    st.write(f"מידות: {site_img_check['width']}×{site_img_check['height']}")
-
-                    if site_img_check["can_use"]:
-                        st.success("✅ תמונת האתר תקינה")
-                    else:
-                        st.error(f"❌ תמונת האתר דורשת החלפה: {image_status_text(site_img_check)}")
+                    show_image_check(site_img_check)
                 else:
                     st.error("❌ תמונת האתר שבורה / לא ניתנת לבדיקה")
 
@@ -246,22 +313,7 @@ for index, row in filtered_df.iterrows():
                 st.link_button("פתח תמונה מוצעת", suggested_image)
 
                 if suggested_img_check and suggested_img_check["ok"]:
-                    st.write(f"מידות: {suggested_img_check['width']}×{suggested_img_check['height']}")
-
-                    if suggested_img_check["is_400x400"]:
-                        st.success("✅ 400×400")
-                    else:
-                        st.error("❌ לא 400×400")
-
-                    if suggested_img_check["has_transparency"]:
-                        st.success("✅ ללא רקע")
-                    else:
-                        st.error("❌ יש רקע")
-
-                    if suggested_img_check["can_use"]:
-                        st.success("✅ התמונה המוצעת עומדת בתנאים")
-                    else:
-                        st.error("⛔ אי אפשר להשתמש בתמונה הזאת באתר")
+                    show_image_check(suggested_img_check)
                 else:
                     st.error("❌ לא ניתן לבדוק את התמונה המוצעת")
 
