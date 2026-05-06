@@ -9,7 +9,7 @@ SHEET_ID = "1DLnLWYh3RX94bnbOs32d_5jke5KS33l7g030BNFBSD8"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 st.title("מערכת ניהול מוצרי האתר - פרטוש משקאות")
-st.caption("גרסת טסט מלאה ללא API — לא משנה כלום באתר")
+st.caption("גרסת טסט ללא API — לא משנה כלום באתר")
 
 @st.cache_data(ttl=300)
 def load_data():
@@ -18,7 +18,9 @@ def load_data():
     return df
 
 def is_empty(v):
-    return pd.isna(v) or str(v).strip() == "" or str(v).strip().lower() in ["nan", "none", "null"]
+    if pd.isna(v):
+        return True
+    return str(v).strip().lower() in ["", "nan", "none", "null"]
 
 def clean_text(v):
     if is_empty(v):
@@ -29,11 +31,10 @@ def looks_cut(text):
     text = clean_text(text)
     if not text:
         return True
-    if len(text) < 80:
+    if len(text) < 100:
         return True
-    if text.endswith(("ו", "של", "עם", "ב", "ל", "ה", ",", "-", ":", ";")):
-        return True
-    return False
+    bad_endings = ("ו", "של", "עם", "ב", "ל", "ה", ",", "-", ":", ";")
+    return text.endswith(bad_endings)
 
 def image_missing(v):
     if is_empty(v):
@@ -41,20 +42,82 @@ def image_missing(v):
     text = str(v).strip()
     return not text.startswith("http")
 
+def detect_product_type(name, category):
+    txt = f"{name} {category}".lower()
+
+    if any(x in txt for x in ["בירה", "beer", "לאגר", "אייל", "ipa"]):
+        return "בירה"
+    if any(x in txt for x in ["יין", "wine", "קברנה", "מרלו", "שרדונה", "סוביניון", "רוזה", "מוסקטו"]):
+        return "יין"
+    if any(x in txt for x in ["וודקה", "vodka"]):
+        return "וודקה"
+    if any(x in txt for x in ["וויסקי", "ויסקי", "whisky", "whiskey", "בורבון"]):
+        return "וויסקי"
+    if any(x in txt for x in ["ערק", "arak"]):
+        return "ערק"
+    if any(x in txt for x in ["טקילה", "tequila"]):
+        return "טקילה"
+    if any(x in txt for x in ["ג׳ין", "ג'ין", "gin"]):
+        return "ג׳ין"
+    if any(x in txt for x in ["רום", "rum"]):
+        return "רום"
+    if any(x in txt for x in ["ליקר", "liqueur"]):
+        return "ליקר"
+    if any(x in txt for x in ["בריזר", "breezer", "קוקטייל"]):
+        return "קוקטייל מוכן"
+    if any(x in txt for x in ["פופקורן", "קרח"]):
+        return "מוצר חנות"
+    return "כללי"
+
 def make_description(name, short_desc, category):
     name = clean_text(name)
     short_desc = clean_text(short_desc)
     category = clean_text(category)
+    ptype = detect_product_type(name, category)
 
-    base = f"{name} הוא מוצר איכותי מבית פרטוש משקאות, מתאים ללקוחות שמחפשים מוצר אמין, נגיש ומוכן לשימוש יומיומי או לאירוח."
-    
+    if ptype == "בירה":
+        text = f"{name} היא בירה מרעננת ונגישה, המתאימה לשתייה קרה, לאירוח, לערב חברים או לצד ארוחה קלילה. המוצר מציע חוויית שתייה נעימה ומאוזנת, עם אופי קל לשתייה שמתאים למגוון רחב של לקוחות."
+
+    elif ptype == "יין":
+        text = f"{name} הוא יין איכותי המתאים לארוחות, אירוח ושולחן שבת. היין מעניק חוויית שתייה נעימה ומאוזנת, ומתאים למי שמחפש בקבוק טוב ונגיש לשימוש יומיומי או לאירוע משפחתי."
+
+    elif ptype == "וודקה":
+        text = f"{name} היא וודקה איכותית בעלת אופי נקי וחלק, המתאימה לשתייה נקייה, עם קרח או כבסיס לקוקטיילים. בחירה טובה למי שמחפש משקה אלכוהולי קלאסי ונוח לשילוב באירוח."
+
+    elif ptype == "וויסקי":
+        text = f"{name} הוא וויסקי איכותי עם אופי עשיר ונוכחות מורגשת. מתאים לשתייה נקייה, עם קרח או לאירוח, ומיועד לחובבי וויסקי שמחפשים בקבוק עם חוויית שתייה נעימה ומרשימה."
+
+    elif ptype == "ערק":
+        text = f"{name} הוא ערק בעל אופי אניסי מובהק, מתאים לשתייה קרה, עם מים או קרח, ומשתלב מצוין באירוח ישראלי ובארוחות עשירות."
+
+    elif ptype == "טקילה":
+        text = f"{name} היא טקילה איכותית המתאימה לשתייה נקייה, בצ׳ייסר או כבסיס לקוקטיילים. בחירה טובה לאירוח, מסיבות וערבים עם חברים."
+
+    elif ptype == "ג׳ין":
+        text = f"{name} הוא ג׳ין איכותי המתאים לשתייה עם טוניק, קרח ותוספות כמו לימון או עשבי תיבול. מתאים במיוחד לקוקטיילים ולאירוח קליל."
+
+    elif ptype == "רום":
+        text = f"{name} הוא רום איכותי המתאים לשתייה נקייה, עם קרח או כבסיס לקוקטיילים. מתאים לאירוח ולמי שמחפש משקה עם אופי מתקתק ועשיר."
+
+    elif ptype == "ליקר":
+        text = f"{name} הוא ליקר איכותי ומתוק, המתאים לשתייה נקייה, עם קרח או לשילוב בקוקטיילים וקינוחים. בחירה טובה לאירוח ולמי שמחפש משקה נעים ונגיש."
+
+    elif ptype == "קוקטייל מוכן":
+        text = f"{name} הוא משקה מוכן לשתייה, קליל ומרענן, שמתאים במיוחד לאירוח, בילוי ושתייה קרה. פתרון נוח למי שמחפש משקה טעים וזמין בלי הכנה מיוחדת."
+
+    elif ptype == "מוצר חנות":
+        text = f"{name} הוא מוצר משלים ונוח לאירוח, מסיבות, אירועים ושימוש יומיומי. מתאים ללקוחות שמחפשים פתרון פשוט, זמין ואיכותי לצד קניית משקאות."
+
+    else:
+        text = f"{name} הוא מוצר איכותי מקטגוריית המשקאות, המתאים לאירוח, לשימוש יומיומי וללקוחות שמחפשים מוצר נגיש וברור לרכישה באתר."
+
     if short_desc and len(short_desc) > 20:
-        base += f"\n\n{short_desc}"
+        text += f"\n\n{short_desc}"
 
     if category:
-        base += f"\n\nקטגוריה: {category}. מומלץ להציג באתר עם תמונה ברורה, רקע נקי ותיאור מלא שמסביר ללקוח מה הוא קונה."
+        text += f"\n\nקטגוריה: {category}"
 
-    return base
+    return text
 
 try:
     df = load_data()
@@ -76,7 +139,13 @@ with st.sidebar:
     short_col = st.selectbox("עמודת תיאור קצר", possible_cols, index=possible_cols.index("תיאור קצר") if "תיאור קצר" in possible_cols else 0)
     desc_col = st.selectbox("עמודת תיאור מלא", possible_cols, index=possible_cols.index("תיאור") if "תיאור" in possible_cols else 0)
     image_col = st.selectbox("עמודת תמונות", possible_cols, index=possible_cols.index("תמונות") if "תמונות" in possible_cols else 0)
-    category_col = st.selectbox("עמודת קטגוריות", possible_cols, index=possible_cols.index("קטגוריות") if "קטגוריות" in possible_cols else 0)
+
+    if "קטגוריות" in possible_cols:
+        default_cat_index = possible_cols.index("קטגוריות")
+    else:
+        default_cat_index = 0
+
+    category_col = st.selectbox("עמודת קטגוריות", possible_cols, index=default_cat_index)
 
     st.divider()
     min_desc_len = st.slider("אורך מינימלי לתיאור תקין", 50, 400, 120)
@@ -111,6 +180,7 @@ for idx, row in df.iterrows():
         "מק״ט": sku,
         "שם מוצר": name,
         "קטגוריה": category,
+        "סוג מוצר": detect_product_type(name, category),
         "סטטוס": status,
         "בעיות": " | ".join(problems),
         "תיאור קצר": short_desc,
@@ -163,18 +233,15 @@ if search:
 
 st.write(f"נמצאו {len(view_df)} מוצרים בתצוגה הנוכחית")
 
-st.dataframe(
-    view_df,
-    use_container_width=True,
-    height=500
-)
+st.dataframe(view_df, use_container_width=True, height=450)
 
 st.divider()
 
 st.subheader("בדיקת מוצר בודד")
 
 if len(view_df) > 0:
-    selected_name = st.selectbox("בחר מוצר לבדיקה", view_df["שם מוצר"].fillna("").tolist())
+    product_options = view_df["שם מוצר"].fillna("").tolist()
+    selected_name = st.selectbox("בחר מוצר לבדיקה", product_options)
     selected = view_df[view_df["שם מוצר"] == selected_name].iloc[0]
 
     c1, c2 = st.columns([1, 2])
@@ -182,6 +249,8 @@ if len(view_df) > 0:
     with c1:
         st.write("**שם מוצר:**", selected["שם מוצר"])
         st.write("**מק״ט:**", selected["מק״ט"])
+        st.write("**סוג מוצר:**", selected["סוג מוצר"])
+        st.write("**קטגוריה:**", selected["קטגוריה"])
         st.write("**סטטוס:**", selected["סטטוס"])
         st.write("**בעיות:**", selected["בעיות"])
 
@@ -197,7 +266,7 @@ if len(view_df) > 0:
         st.text_area("תיאור קיים", selected["תיאור קיים"], height=180)
 
         st.write("**תיאור מוצע:**")
-        st.text_area("תיאור מוצע", selected["תיאור מוצע"], height=220)
+        st.text_area("תיאור מוצע", selected["תיאור מוצע"], height=240)
 
 st.divider()
 
